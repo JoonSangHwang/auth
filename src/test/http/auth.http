@@ -1,68 +1,75 @@
-### 토큰 발급 (로그인)
-POST localhost:8080/oauth/token
+### [1단계] 인가 페이지 — 브라우저에서 직접 열기
+# GET {{host}}/authorize?client_id=550e8400-e29b-41d4-a716-446655440002&redirect_uri=http://localhost:8080/callback&response_type=code
+
+---
+
+### [2단계] 토큰 발급 — 인가 코드로 AT·RT 쿠키 발급
+# authorize POST 후 redirect_uri?code=xxx 에서 code 값을 아래에 입력
+POST {{host}}/oauth/token
 Content-Type: application/json
 
 {
+  "grantType": "authorization_code",
+  "code": "{{authCode}}",
   "clientId": "550e8400-e29b-41d4-a716-446655440002",
-  "username": "admin",
-  "password": "1"
+  "redirectUri": "http://localhost:8080/callback"
 }
 
 > {%
-  client.test("로그인 성공", function() {
+  client.test("토큰 발급 성공", function() {
     client.assert(response.status === 200, "status is not 200");
     client.assert(response.body.success === true, "success is not true");
-    client.assert(response.body.data.redirectUrl !== null, "redirectUrl is null");
+  });
+%}
+
+---
+
+### 토큰 발급 실패 - 유효하지 않은 인가 코드
+POST {{host}}/oauth/token
+Content-Type: application/json
+
+{
+  "grantType": "authorization_code",
+  "code": "invalid-code",
+  "clientId": "550e8400-e29b-41d4-a716-446655440002",
+  "redirectUri": "http://localhost:8080/callback"
+}
+
+> {%
+  client.test("인가 코드 오류 - 400", function() {
+    client.assert(response.status === 400, "status is not 400");
+    client.assert(response.body.code === "AUTH-007", "error code is not AUTH-007");
+  });
+%}
+
+---
+
+### 토큰 발급 실패 - 지원하지 않는 grant_type
+POST {{host}}/oauth/token
+Content-Type: application/json
+
+{
+  "grantType": "password",
+  "code": "some-code",
+  "clientId": "550e8400-e29b-41d4-a716-446655440002",
+  "redirectUri": "http://localhost:8080/callback"
+}
+
+> {%
+  client.test("grant_type 오류 - 400", function() {
+    client.assert(response.status === 400, "status is not 400");
+    client.assert(response.body.code === "AUTH-009", "error code is not AUTH-009");
   });
 %}
 
 ---
 
 ### 토큰 폐기 (로그아웃)
-POST localhost:8080/oauth/revoke
+POST {{host}}/oauth/revoke
 
 > {%
   client.test("로그아웃 성공", function() {
     client.assert(response.status === 200, "status is not 200");
     client.assert(response.body.success === true, "success is not true");
-  });
-%}
-
----
-
-### 토큰 발급 실패 - 잘못된 비밀번호
-POST localhost:8080/oauth/token
-Content-Type: application/json
-
-{
-  "clientId": "{{clientId}}",
-  "username": "{{username}}",
-  "password": "wrong_password"
-}
-
-> {%
-  client.test("로그인 실패 - 401", function() {
-    client.assert(response.status === 401, "status is not 401");
-    client.assert(response.body.success === false, "success is not false");
-    client.assert(response.body.code === "AUTH-001", "error code is not AUTH-001");
-  });
-%}
-
----
-
-### 토큰 발급 실패 - 등록되지 않은 클라이언트
-POST {{host}}/oauth/token
-Content-Type: application/json
-
-{
-  "clientId": "invalid-client-id",
-  "username": "{{username}}",
-  "password": "{{password}}"
-}
-
-> {%
-  client.test("클라이언트 오류 - 401", function() {
-    client.assert(response.status === 401, "status is not 401");
-    client.assert(response.body.code === "AUTH-005", "error code is not AUTH-005");
   });
 %}

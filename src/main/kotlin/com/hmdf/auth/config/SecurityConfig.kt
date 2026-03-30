@@ -26,7 +26,7 @@ class SecurityConfig {
             .and()
             .authorizeHttpRequests()
             .antMatchers(
-                "/login", "/oauth/token", "/oauth/revoke", "/error", "/css/**", "/js/**",
+                "/authorize", "/login", "/oauth/token", "/oauth/revoke", "/error", "/css/**", "/js/**",
                 "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",
                 "/h2-console/**"
             ).permitAll()

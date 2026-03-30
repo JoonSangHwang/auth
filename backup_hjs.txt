@@ -1,0 +1,177 @@
+====================================================================================
+0. 사전체크
+
+# 유저 일단 확인
+podman images
+podman inspect youtrack
+
+
+# 서비스 확인
+ls -alt /etc/containers/systemd/
+
+====================================================================================
+1. 설치 (6번)
+
+sudo podman pull docker.gitea.com/gitea:1.25.5
+
+sudo mkdir -p -m 750 /data-ssd2/gitea
+sudo chown -R 1000:1000 /data-ssd2/gitea
+
+sudo tee /etc/containers/systemd/gitea.container >/dev/null <<'EOF'
+[Unit]
+Description=Gitea Server
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.gitea.com/gitea:1.25.5
+ContainerName=gitea
+
+# 웹
+PublishPort=127.0.0.1:3000:3000;
+
+# Gitea SSH
+PublishPort=2222:22
+
+# Gitea 영속 데이터
+Volume=/data-ssd2/gitea:/data:Z
+
+Pull=never
+Timezone=Asia/Seoul
+
+Environment=USER_UID=1000
+Environment=USER_GID=1000
+
+Environment=GITEA__server__DOMAIN=gitea.hdmfcorp.com
+Environment=GITEA__server__ROOT_URL=https://gitea.hdmfcorp.com/
+Environment=GITEA__server__PROTOCOL=http
+Environment=GITEA__server__HTTP_PORT=3000
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+# 기동
+sudo systemctl daemon-reload
+sudo systemctl enable --now gitea.service
+sudo systemctl status gitea.service
+sudo podman ps
+sudo podman logs -f gitea
+sudo journalctl -u gitea.service -f
+
+
+====================================================================================
+2. DNS 등록 (7번)
+
+# ipa 관리자 접속
+kinit admin
+
+# DNS 생성
+ipa dnsrecord-add hdmfcorp.com gitea --a-rec=172.23.1.66
+nslookup gitea.hdmfcorp.com
+
+    ipa service-add HTTP/rdev06.hdmfcorp.com
+
+# Service Principal 생성
+ipa service-add-principal HTTP/rdev06.hdmfcorp.com HTTP/gitea.hdmfcorp.com
+
+====================================================================================
+3. 인증서 및 Nginx 기동 (6번)
+
+# rdev06 서버를 IPA 에 연결
+    sudo dnf install -y ipa-client
+
+# 인증서를 자동으로 발급하고 자동으로 갱신해주는 프로그램
+    sudo systemctl enable --now certmonger
+
+    sudo mkdir -p /etc/pki/nginx/private
+    sudo chmod 700 /etc/pki/nginx/private
+
+# 인증서 발급
+sudo ipa-getcert request \
+  -k /etc/pki/nginx/private/gitea.hdmfcorp.com.key \
+  -f /etc/pki/nginx/gitea.hdmfcorp.com.crt \
+  -K HTTP/gitea.hdmfcorp.com \
+  -D gitea.hdmfcorp.com \
+  -C 'systemctl reload nginx'
+
+### 발급 상태 확인 ###
+sudo ipa-getcert list
+
+# fullchain 생성
+sudo sh -c 'cat \
+/etc/pki/nginx/gitea.hdmfcorp.com.crt \
+/etc/ipa/ca.crt \
+> /etc/pki/nginx/gitea.hdmfcorp.com.fullchain.crt'
+
+sudo chmod 644 /etc/pki/nginx/gitea.hdmfcorp.com.fullchain.crt
+
+
+
+====================================================================================
+4. 폴더 권한 (6번)
+
+
+#권한설정
+sudo chown root:root /etc/pki/nginx/gitea.hdmfcorp.com.crt
+sudo chown root:root /etc/pki/nginx/gitea.hdmfcorp.com.fullchain.crt
+sudo chown root:nginx /etc/pki/nginx/private/gitea.hdmfcorp.com.key
+
+sudo chmod 644 /etc/pki/nginx/gitea.hdmfcorp.com.crt
+sudo chmod 644 /etc/pki/nginx/gitea.hdmfcorp.com.fullchain.crt
+sudo chmod 640 /etc/pki/nginx/private/gitea.hdmfcorp.com.key
+
+
+
+====================================================================================
+5. 실행 (6번)
+
+sudo nginx -t
+sudo systemctl restart nginx
+sudo systemctl status nginx
+
+====================================================================================
+9. gitea 설정 파일
+
+sudo tee /etc/nginx/conf.d/gitea.conf >/dev/null <<'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name gitea.hdmfcorp.com;
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name gitea.hdmfcorp.com;
+
+    ssl_certificate     /etc/pki/nginx/gitea.hdmfcorp.com.fullchain.crt;
+    ssl_certificate_key /etc/pki/nginx/private/gitea.hdmfcorp.com.key;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    access_log /var/log/nginx/gitea_access.log;
+    error_log  /var/log/nginx/gitea_error.log;
+
+    client_max_body_size 200m;
+
+    location / {
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+
+        proxy_pass http://127.0.0.1:3000/;
+    }
+}
+EOF

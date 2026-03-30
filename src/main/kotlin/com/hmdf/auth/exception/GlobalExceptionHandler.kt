@@ -12,11 +12,15 @@ class GlobalExceptionHandler {
     @ExceptionHandler(AuthException::class)
     fun handleAuthException(e: AuthException): ResponseEntity<ApiResponse<Nothing>> {
         val status = when (e.errorCode) {
-            AuthErrorCode.INVALID_CREDENTIALS -> HttpStatus.UNAUTHORIZED
-            AuthErrorCode.MISSING_TOKEN -> HttpStatus.UNAUTHORIZED
-            AuthErrorCode.INVALID_TOKEN -> HttpStatus.UNAUTHORIZED
-            AuthErrorCode.EXPIRED_TOKEN -> HttpStatus.UNAUTHORIZED
-            AuthErrorCode.INVALID_CLIENT -> HttpStatus.UNAUTHORIZED
+            AuthErrorCode.INVALID_CREDENTIALS       -> HttpStatus.UNAUTHORIZED
+            AuthErrorCode.MISSING_TOKEN             -> HttpStatus.UNAUTHORIZED
+            AuthErrorCode.INVALID_TOKEN             -> HttpStatus.UNAUTHORIZED
+            AuthErrorCode.EXPIRED_TOKEN             -> HttpStatus.UNAUTHORIZED
+            AuthErrorCode.INVALID_CLIENT            -> HttpStatus.BAD_REQUEST
+            AuthErrorCode.INVALID_REDIRECT_URI      -> HttpStatus.BAD_REQUEST
+            AuthErrorCode.INVALID_AUTH_CODE         -> HttpStatus.BAD_REQUEST
+            AuthErrorCode.UNSUPPORTED_RESPONSE_TYPE -> HttpStatus.BAD_REQUEST
+            AuthErrorCode.UNSUPPORTED_GRANT_TYPE    -> HttpStatus.BAD_REQUEST
         }
         return ResponseEntity.status(status).body(
             ApiResponse.error(code = e.errorCode.code, message = e.errorCode.message)

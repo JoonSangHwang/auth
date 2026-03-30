@@ -1,20 +1,21 @@
 package com.hmdf.auth.service
 
 import com.hmdf.auth.domain.OAuthClient
-import com.hmdf.auth.domain.Profile
 import com.hmdf.auth.exception.AuthErrorCode
 import com.hmdf.auth.exception.AuthException
 import com.hmdf.auth.repository.MemberRepository
+import com.hmdf.auth.util.AuthCodeStore
 import com.hmdf.auth.util.JwtUtil
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.core.env.Environment
+import org.springframework.http.HttpHeaders
+import org.springframework.http.ResponseCookie
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
-import javax.servlet.http.Cookie
 import javax.servlet.http.HttpServletResponse
 
 @Service
@@ -22,17 +23,28 @@ class AuthService(
     private val jwtUtil: JwtUtil,
     private val passwordEncoder: PasswordEncoder,
     private val memberRepository: MemberRepository,
-    private val environment: Environment,
+    private val authCodeStore: AuthCodeStore,
     @Value("\${cookie.domain:}") private val cookieDomain: String
 ) {
-    private val activeProfile: String
-        get() = environment.activeProfiles.firstOrNull() ?: Profile.LOCAL
+    companion object {
+        private const val SUPPORTED_RESPONSE_TYPE = "code"
+        private const val SUPPORTED_GRANT_TYPE = "authorization_code"
+    }
 
-    fun login(clientId: String, username: String, password: String, response: HttpServletResponse): String {
-        val client = try {
-            OAuthClient.findByClientId(clientId)
-        } catch (e: IllegalArgumentException) {
-            throw AuthException(AuthErrorCode.INVALID_CLIENT)
+    fun validateAuthorize(clientId: String, redirectUri: String, responseType: String) {
+        if (responseType != SUPPORTED_RESPONSE_TYPE) {
+            throw AuthException(AuthErrorCode.UNSUPPORTED_RESPONSE_TYPE)
+        }
+        val client = findClient(clientId)
+        if (!client.isValidRedirectUri(redirectUri)) {
+            throw AuthException(AuthErrorCode.INVALID_REDIRECT_URI)
+        }
+    }
+
+    fun authorize(clientId: String, redirectUri: String, username: String, password: String): String {
+        val client = findClient(clientId)
+        if (!client.isValidRedirectUri(redirectUri)) {
+            throw AuthException(AuthErrorCode.INVALID_REDIRECT_URI)
         }
 
         val member = memberRepository.findByUsername(username)
@@ -42,18 +54,32 @@ class AuthService(
             throw AuthException(AuthErrorCode.INVALID_CREDENTIALS)
         }
 
-        val accessToken = jwtUtil.generateAccessToken(username)
-        val refreshToken = jwtUtil.generateRefreshToken(username)
+        val code = authCodeStore.issue(clientId, redirectUri, username)
+        return "$redirectUri?code=$code"
+    }
+
+    fun token(grantType: String, code: String, clientId: String, redirectUri: String, response: HttpServletResponse) {
+        if (grantType != SUPPORTED_GRANT_TYPE) {
+            throw AuthException(AuthErrorCode.UNSUPPORTED_GRANT_TYPE)
+        }
+
+        val info = authCodeStore.consume(code)
+            ?: throw AuthException(AuthErrorCode.INVALID_AUTH_CODE)
+
+        if (info.clientId != clientId || info.redirectUri != redirectUri) {
+            throw AuthException(AuthErrorCode.INVALID_AUTH_CODE)
+        }
+
+        val accessToken = jwtUtil.generateAccessToken(info.username)
+        val refreshToken = jwtUtil.generateRefreshToken(info.username)
 
         val atMaxAge = ChronoUnit.SECONDS.between(
             LocalDateTime.now(),
             LocalDateTime.of(LocalDate.now(), LocalTime.of(23, 59, 59))
-        ).toInt()
+        )
 
         setCookie(response, "access_token", accessToken, atMaxAge)
         setCookie(response, "refresh_token", refreshToken, 7 * 24 * 60 * 60)
-
-        return client.getRedirectUrl(activeProfile)
     }
 
     fun logout(response: HttpServletResponse) {
@@ -61,15 +87,22 @@ class AuthService(
         setCookie(response, "refresh_token", "", 0)
     }
 
-    private fun setCookie(response: HttpServletResponse, name: String, value: String, maxAge: Int) {
-        val cookie = Cookie(name, value).apply {
-            isHttpOnly = true
-            path = "/"
-            if (cookieDomain.isNotBlank()) {
-                domain = cookieDomain
-            }
-            this.maxAge = maxAge
+    private fun findClient(clientId: String): OAuthClient =
+        try {
+            OAuthClient.findByClientId(clientId)
+        } catch (e: IllegalArgumentException) {
+            throw AuthException(AuthErrorCode.INVALID_CLIENT)
         }
-        response.addCookie(cookie)
+
+    private fun setCookie(response: HttpServletResponse, name: String, value: String, maxAge: Long) {
+        val cookie = ResponseCookie.from(name, value)
+            .httpOnly(true)
+            .path("/")
+            .sameSite("Lax")
+            .maxAge(Duration.ofSeconds(maxAge))
+            .apply { if (cookieDomain.isNotBlank()) domain(cookieDomain) }
+            .build()
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString())
     }
 }
