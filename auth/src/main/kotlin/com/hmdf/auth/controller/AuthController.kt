@@ -37,7 +37,7 @@ class AuthController(private val authService: AuthService) {
         response: HttpServletResponse
     ): ResponseEntity<ApiResponse<TokenResponse>> {
         val redirectUrl = authService.login(request.clientId, request.username, request.password, response)
-        return ResponseEntity.ok(ApiResponse.ok(TokenResponse(redirectUrl = redirectUrl)))
+        return ResponseEntity.ok(ApiResponse.ok(TokenResponse(redirectUrl = redirectUrl), "로그인이 성공하였습니다."))
     }
 
     @Operation(summary = "토큰 폐기", description = "AT·RT 쿠키 삭제")
@@ -46,6 +46,6 @@ class AuthController(private val authService: AuthService) {
     @ResponseBody
     fun revoke(response: HttpServletResponse): ResponseEntity<ApiResponse<Unit>> {
         authService.logout(response)
-        return ResponseEntity.ok(ApiResponse.ok())
+        return ResponseEntity.ok(ApiResponse.ok("로그아웃이 완료되었습니다."))
     }
 }

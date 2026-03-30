@@ -27,7 +27,7 @@ class DataInitializer(
                 username = "admin",
                 password = passwordEncoder.encode("1"),
                 userName = "관리자",
-                empNo    = "EMP0001",
+                empNo    = "313885",
                 role     = Role.ADMIN
             )
         )

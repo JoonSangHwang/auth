@@ -32,6 +32,6 @@ class MemberController(private val memberService: MemberService) {
     @RequireAuth
     @GetMapping("/userinfo")
     fun userinfo(@RequestAttribute username: String): ResponseEntity<ApiResponse<MemberResponse>> {
-        return ResponseEntity.ok(ApiResponse.ok(memberService.getMyInfo(username)))
+        return ResponseEntity.ok(ApiResponse.ok(memberService.getMyInfo(username), "사용자 정보를 조회하였습니다."))
     }
 }

@@ -1,0 +1,24 @@
+### 사용자 정보 조회 (로그인 후 쿠키 자동 포함)
+GET localhost:8080/oauth/userinfo
+
+> {%
+  client.test("사용자 정보 조회 성공", function() {
+    client.assert(response.status === 200, "status is not 200");
+    client.assert(response.body.success === true, "success is not true");
+    client.assert(response.body.data.userId !== null, "userId is null");
+    client.assert(response.body.data.userName !== null, "userName is null");
+    client.assert(response.body.data.empNo !== null, "empNo is null");
+  });
+%}
+
+---
+
+### 사용자 정보 조회 실패 - 토큰 없음
+GET localhost:8080/oauth/userinfo
+
+> {%
+  client.test("토큰 없음 - 401", function() {
+    client.assert(response.status === 401, "status is not 401");
+    client.assert(response.body.code === "AUTH-002", "error code is not AUTH-002");
+  });
+%}

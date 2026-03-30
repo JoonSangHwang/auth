@@ -13,7 +13,7 @@ class Member(
     @Column(nullable = false)
     var password: String,
 
-    @Column(nullable = false, length = 100)
+    @Column(name = "user_name", nullable = false, length = 100)
     var userName: String,
 
     @Column(nullable = false, unique = true, length = 20)
